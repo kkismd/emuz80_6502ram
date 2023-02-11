@@ -6,6 +6,20 @@
 
 ファイル名: `EMUZ80-6502RAM_unimon_vtlc02_Q43.hex`
 
-奥江さんがROMイメージ内に導入されていた Universal Monitor をACIAポートのアドレスを修正して動作するようにしました。
+奥江さんがROMイメージ内にひそかに導入されていた[Universal Monitor for 6502](https://electrelic.com/electrelic/node/1317) をACIAポートのアドレスを修正して動作するようにしました。
 
 VTL2の6502版である[VTLC02](https://github.com/barrym95838/6502-Assembly)の入出力ルーチンを改変して動作するようにしました。
+
+### 起動方法
+
+電源オンORリセットでEhBASICが起動したあと、以下の操作で起動することができます。
+
+unimon
+```
+CALL $F600
+```
+
+VTL
+```
+CALL $F100
+```
