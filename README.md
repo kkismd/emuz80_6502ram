@@ -4,7 +4,7 @@
 
 ## Unimon + VTLC02 イメージ
 
-ファイル名: `EMUZ80-6502RAM_unimon_vtlc02_Q43.hex`
+ファイル名: [EMUZ80-6502RAM_unimon_vtlc02_Q43.hex](./EMUZ80-6502RAM_unimon_vtlc02_Q43.hex)
 
 奥江さんがROMイメージ内にひそかに導入されていた[Universal Monitor for 6502](https://electrelic.com/electrelic/node/1317) をACIAポートのアドレスを修正して動作するようにしました。
 
@@ -23,3 +23,9 @@ VTL
 ```
 CALL $F100
 ```
+
+## VTLC02
+
+オリジナルからの改変場所を [vtlc02_emuz6502.diff](./vtlc02_emuz6502.diff) にあげています。
+
+[ACME Cross-Assembler](https://github.com/martinpiper/ACME)でアセンブルできるように疑似命令などを修正しています。
