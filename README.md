@@ -32,7 +32,7 @@ CALL $F100
 
 [ACME Cross-Assembler](https://github.com/martinpiper/ACME)でアセンブルできるように疑似命令などを修正しています。
 
-## VTLC02-GM
+### VTLC02-GM
 
 コードネーム "GM" として、自分好みに機能追加しています。読み方は「ジム」です。
 
@@ -40,7 +40,7 @@ CALL $F100
 - [vtlc02_gm.ihex](./vtlc02_gm.ihex) ... 上記をアセンブルしたiHexファイルです。UnimonからLコマンドでロードできます。
 - [test_gm.vtl](./test_gm.vtl) ... GMの機能が正しく動いているか確認するためのテストコードです。内部構造の変更についての確認も含んでいます。
 
-現状の追加機能リスト
+#### 現状の追加機能リスト
 
 - 16進リテラル
   - 0で始まる数値列は16進数として解釈されます
@@ -52,5 +52,17 @@ CALL $F100
 3858
 OK
 ```
+
+- インデント機能の廃止
+  - 将来の文法拡張のために、《インデントや可視性のために空白を無視する機能》を廃止しました。
+  - もともとあった機能についてはソースコード中の下記のコメントを参照してください。
+
+>     ; * Starting with VTL02B, the space character is no
+>     ;     longer a valid user variable nor a "valid" binary
+>     ;     operator.  It's now only significant as a numeric
+>     ;     constant terminator and as a place-holder in
+>     ;     strings and program listings, where it may be
+>     ;     used to improve human readability (at a slight
+>     ;     cost in execution speed and memory consumption).
 
 今のところ以上です。
