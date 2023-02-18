@@ -10,45 +10,52 @@
 190 #=220
 200 ?="poke / peek test faild"
 210 E=E+1
-220 ) hex number literal
-230 #=1=01]360
-240 ?=".";
-250 #=9=09]360
-260 ?=".";
-270 #=10=0A]360
-280 ?=".";
-290 #=15=0F]360
-300 ?=".";
-310 #=241=0F1]360
-320 ?=".";
-330 #=65535=0FFFF]360
-340 ?=".";
-350 #=380
-360 ERR ?="hex number literal test faild"
-370 E=E+1
-380 ) print char test
-390 ) this is not a test but must cause odd behavior if bugs
-390 $=46
-400 ) user ml routine test
-410 )   8a      txa
-420 )   2039fd  jsr  CONOUT
-430 )   60      rts
-440 <=&
-450 @=138
-460 <=<+1
-470 @=32
-480 <=<+1
-490 @=57
-500 <=<+1
-510 @=253
-520 <=<+1
-530 @=96
-540 "=&
-550 >=46 ) 46 = '.'
+220 ?=E
+230 ) hex number literal
+240 #=1=01]370
+250 ?=".";
+260 #=9=09]370
+270 ?=".";
+280 #=10=0A]370
+290 ?=".";
+300 #=15=0F]370
+310 ?=".";
+320 #=241=0F1]370
+330 ?=".";
+340 #=65535=0FFFF]370
+350 ?=".";
+360 #=390
+370 ?="hex number literal test faild"
+380 E=E+1
+390 ?=E
+400 ) print char test
+410 ) this is not a test but must cause odd behavior if bugs
+420 $=46
+430 ) user ml routine test
+440 )   8a      txa
+450 )   2039fd  jsr  CONOUT
+460 )   60      rts
+470 <=&
+480 @=08A
+490 <=<+1
+500 @=020
+510 <=<+1
+520 @=039
+530 <=<+1
+540 @=0FD
+550 <=<+1
+560 @=060
+570 "=&
+580 >=46 ) 46 = '.'
+590 ) test print hex format
+600 I=0
+610 ?$=I
+620 ?=".";
+630 I=I+17
+640 #=I<256[610
 
 9000 ) total report
 9010 #=E>1[9050]9020
 9020 ?="total number of errors is ";
 9040 ?=E
 9050 ?=""
-#=1

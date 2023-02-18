@@ -477,6 +477,9 @@ exec:
     jsr  skpbyte    ; is right-side a literal string?
     cmp  #'"'       ;   yes: print the string with
     beq  prstr0     ;     trailing ';' check & return
+    ldx  arg        ; check left-side var name
+    cpx  #ques      ; if {?=...} statement then print
+    beq  prnumx     ;   in variouse format
     ldx  #arg+2     ; point eval to arg[{1}]
     jsr  eval       ; evaluate right-side in arg[{1}]
     lda  arg+2      ;
@@ -487,8 +490,6 @@ exec:
     beq  poke       ;   low half of arg[{1}] to ({<})
     cpx  #dolr      ; if {$=...} statement then print
     beq  joutch     ;   arg[{1}] as ASCII character
-    cpx  #ques      ; if {?=...} statement then print
-    beq  prnum0     ;   arg[{1}] as unsigned decimal
     cpx  #gthan     ; if {>=...} statement then call
     beq  usr        ;   user-defined ml routine
 exec3:
@@ -561,6 +562,45 @@ prnum5:
     bne  prnum5     ;   is encountered
     ply             ; restore y
     rts             ;
+;-----------------------------------------------------;
+; {?=...} handler with variouse format; called by exec:
+prnumx:
+    dey
+    lda  (at),y     ; fetch 1 byte next to '?'
+    iny
+    cmp  #'$'       ; is '$' ?
+    beq  prnumx2    ;   yes: print hex
+    ldx  #arg+2     ; point eval to arg[{1}]
+    jsr  eval       ; evaluate right-side in arg[{1}]
+    bra  prnum0
+prnumx2:
+    iny             ; skip '$'
+    ldx  #arg+2     ; point eval to arg[{1}]
+    jsr  eval       ; evaluate right-side in arg[{1}]
+    ldx  #arg+2     ; x -> arg[{1}]
+    lda  arg+2      ;
+    jsr  prhex
+    bra  execend
+;-----------------------------------------------------;
+; Print a as hexadecimal number (00 .. FF)
+prhex:
+    pha             ; save a for lsb
+    lsr             ; msb to lsb position
+    lsr
+    lsr
+    lsr
+    jsr  prhex2
+    pla
+prhex2:
+    and  #$0f       ; mask LSD
+    clc
+    adc  #$30       ; add '0'
+    cmp  #$3a       ; digit?
+    bcc  prhex3     ;   yes: print it
+    adc  #$06       ; add offset to letter
+prhex3:
+    jsr  outch
+    rts
 ;-----------------------------------------------------;
 ; Evaluate a (hopefully) valid VTLC02 expression at
 ;   @[y] and place its calculated value in arg[x]
