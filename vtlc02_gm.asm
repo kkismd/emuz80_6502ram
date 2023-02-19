@@ -574,10 +574,24 @@ prnumx:
     jsr  eval       ; evaluate right-side in arg[{1}]
     bra  prnum0
 prnumx2:
-    iny             ; skip '$'
+    lda  (at),y     ; fetch 1 byte next to '$'
+    cmp  #'$'       ; is '$' ?
+    beq  prnumx3    ;   yes: print double hex
+    iny             ;   no:  skip '='
     ldx  #arg+2     ; point eval to arg[{1}]
     jsr  eval       ; evaluate right-side in arg[{1}]
-    ldx  #arg+2     ; x -> arg[{1}]
+    ; ldx  #arg+2     ; x -> arg[{1}]
+    lda  arg+2      ;
+    jsr  prhex
+    bra  execend
+prnumx3:
+    iny             ; skip '$'
+    iny             ; skip '='
+    ldx  #arg+2     ; point eval to arg[{1}]
+    jsr  eval       ; evaluate right-side in arg[{1}]
+    ; ldx  #arg+2     ; x -> arg[{1}]
+    lda  arg+3      ;
+    jsr  prhex
     lda  arg+2      ;
     jsr  prhex
     bra  execend
