@@ -77,17 +77,10 @@ FFFF
 OK
 ```
 
+- マルチステートメント
+  - 1行の中にスペース区切りで複数の命令を書くことができます。
 
 - インデント機能の廃止
-  - 将来の文法拡張のために、《インデントや可視性のために空白を無視する機能》を廃止しました。
-  - もともとあった機能についてはソースコード中の下記のコメントを参照してください。
-
->     ; * Starting with VTL02B, the space character is no
->     ;     longer a valid user variable nor a "valid" binary
->     ;     operator.  It's now only significant as a numeric
->     ;     constant terminator and as a place-holder in
->     ;     strings and program listings, where it may be
->     ;     used to improve human readability (at a slight
->     ;     cost in execution speed and memory consumption).
+  - マルチステートメントのために、《インデントや可視性のために空白を無視する機能》を廃止しました。
 
 今のところ以上です。

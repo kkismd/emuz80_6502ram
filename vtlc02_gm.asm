@@ -433,10 +433,10 @@ prstr0:
 prstr:
     iny             ; next byte
     txa             ;
-    cmp  (at),y     ; found delimiter or '\0'?
+    cmp  (at),y     ; found delimiter
     beq  prstr2     ;   yes: finish up
-    lda  (at),y     ;
-    beq  prstr2     ;
+    lda  (at),y     ; found '\0'?
+    beq  outnl      ;   yes: newline and return
     jsr  outch      ;   no: print char to terminal
     bra  prstr      ;     and loop
 prstr2:
@@ -445,8 +445,18 @@ prstr2:
     txa             ; retrieve closing delimiter
     beq  outnl      ; always '\n' after '\0' delimiter
     jsr  skpbyte    ; skip over the delimiter
-    cmp  #';'       ; if trailing char is ';' then
-    beq  execrts    ;   suppress the '\n'
+    cmp  #';'       ; if trailing char is ';' ?
+    beq  prstr3     ;  yes: skip newline
+    lda  #CR        ;  no:  print newline
+    jsr  outch      ;
+    dey             ; cancel next increment
+prstr3:
+    iny             ; skip ';'
+    lda  (at),y     ; fetch next char
+    iny
+    sty  dolr+1
+    sta  dolr
+    bra  execend
 outnl:
     lda  #CR        ; \n to terminal
 joutch:
@@ -482,6 +492,8 @@ exec:
     beq  prnumx     ;   in variouse format
     ldx  #arg+2     ; point eval to arg[{1}]
     jsr  eval       ; evaluate right-side in arg[{1}]
+    sta  dolr       ; save last char
+    sty  dolr+1     ; save last index
     lda  arg+2      ;
     ldx  arg+1      ; was left-side an array element?
     bne  exec3      ;   yes: skip to default actions
@@ -505,10 +517,16 @@ exec3:
     sta  tick+1     ;
     stx  tick       ;
 execend:
-    ; pha
-    ; lda #'!'
-    ; jsr outch
-    ; pla
+    ldy  dolr+1     ; save last index
+    lda  dolr       ; save last char
+    cmp  #' '       ; statement seperator?
+    bne  execrts    ;   no: exec end
+execend2:
+    lda  (at),y     ; check next char
+    cmp  #' '       ;   is space ?
+    bne  exec       ;   no: go next statement
+    iny             ;   yes: advance index
+    bra  execend2   ;        check again
 execrts:
     rts             ;
 usr:
@@ -572,6 +590,8 @@ prnumx:
     beq  prnumx2    ;   yes: print hex
     ldx  #arg+2     ; point eval to arg[{1}]
     jsr  eval       ; evaluate right-side in arg[{1}]
+    sta  dolr       ; save last char
+    sty  dolr+1     ; save last index
     bra  prnum0
 prnumx2:
     lda  (at),y     ; fetch 1 byte next to '$'
@@ -580,7 +600,8 @@ prnumx2:
     iny             ;   no:  skip '='
     ldx  #arg+2     ; point eval to arg[{1}]
     jsr  eval       ; evaluate right-side in arg[{1}]
-    ; ldx  #arg+2     ; x -> arg[{1}]
+    sta  dolr       ; save last char
+    sty  dolr+1     ; save last index
     lda  arg+2      ;
     jsr  prhex
     bra  execend
@@ -589,12 +610,13 @@ prnumx3:
     iny             ; skip '='
     ldx  #arg+2     ; point eval to arg[{1}]
     jsr  eval       ; evaluate right-side in arg[{1}]
-    ; ldx  #arg+2     ; x -> arg[{1}]
+    sta  dolr       ; save last char
+    sty  dolr+1     ; save last index
     lda  arg+3      ;
     jsr  prhex
     lda  arg+2      ;
     jsr  prhex
-    bra  execend
+    jmp  execend
 ;-----------------------------------------------------;
 ; Print a as hexadecimal number (00 .. FF)
 prhex:
@@ -1006,7 +1028,8 @@ inln6:
     iny             ; line limit exceeded?
     bpl  inln2      ;   no: keep going
 newln:
-    jsr  outnl      ;   yes: discard entire line
+    lda  #CR        ;   yes: discard entire line
+    jsr  outch      ;
 inln:
     lda  #<linbuf   ; entry point: start a fresh line
     sta  at         ; {@} -> input line buffer
