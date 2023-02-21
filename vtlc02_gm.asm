@@ -194,7 +194,7 @@ star     = $d4      ; {*}  pointer to end of free mem
 ; Interpreter argument stack space
 arg      = $e0      ; {0 1 2 3 4 5 6 7 8 9 :}*
 ; Rarely used variables and argument stack overflow
-;          $f6      ; {;}  valid user variable
+semi     = $f6      ; {;}  if statement
 lthan    = $f8      ; {<}* byte pointer for peek/poke
 ;        = $fa      ; {=}* valid user variable
 gthan    = $fc      ; {>}* temp / call ML subroutine
@@ -504,6 +504,8 @@ exec:
     beq  joutch     ;   arg[{1}] as ASCII character
     cpx  #gthan     ; if {>=...} statement then call
     beq  usr        ;   user-defined ml routine
+    cpx  #semi      ; if {;=...} statement then
+    beq  ifstmt     ;   exec if-then statement
 exec3:
     sta  (arg)      ;
     adc  tick+1     ; store arg[{1}] in the left-side
@@ -539,6 +541,47 @@ usr2:
 poke:
     sta  (lthan)    ;
     bra  execend
+ifstmt:
+    ora  arg+3
+    beq  execrts ; arg is 0?  yes: end exec
+    bne  execend ;   no: go next statement
+;-----------------------------------------------------;
+; {?=...} handler with variouse format; called by exec:
+prnumx:
+    dey
+    lda  (at),y     ; fetch 1 byte next to '?'
+    iny
+    cmp  #'$'       ; is '$' ?
+    beq  prnumx2    ;   yes: print hex
+    ldx  #arg+2     ; point eval to arg[{1}]
+    jsr  eval       ; evaluate right-side in arg[{1}]
+    sta  dolr       ; save last char
+    sty  dolr+1     ; save last index
+    bra  prnum0
+prnumx2:
+    lda  (at),y     ; fetch 1 byte next to '$'
+    cmp  #'$'       ; is '$' ?
+    beq  prnumx3    ;   yes: print double hex
+    iny             ;   no:  skip '='
+    ldx  #arg+2     ; point eval to arg[{1}]
+    jsr  eval       ; evaluate right-side in arg[{1}]
+    sta  dolr       ; save last char
+    sty  dolr+1     ; save last index
+    lda  arg+2      ;
+    jsr  prhex
+    bra  execend
+prnumx3:
+    iny             ; skip '$'
+    iny             ; skip '='
+    ldx  #arg+2     ; point eval to arg[{1}]
+    jsr  eval       ; evaluate right-side in arg[{1}]
+    sta  dolr       ; save last char
+    sty  dolr+1     ; save last index
+    lda  arg+3      ;
+    jsr  prhex
+    lda  arg+2      ;
+    jsr  prhex
+    jmp  execend
 ;-----------------------------------------------------;
 ; {?=...} handler; called by exec:
 ; 2 bytes
@@ -580,43 +623,6 @@ prnum5:
     bne  prnum5     ;   is encountered
     ply             ; restore y
     rts             ;
-;-----------------------------------------------------;
-; {?=...} handler with variouse format; called by exec:
-prnumx:
-    dey
-    lda  (at),y     ; fetch 1 byte next to '?'
-    iny
-    cmp  #'$'       ; is '$' ?
-    beq  prnumx2    ;   yes: print hex
-    ldx  #arg+2     ; point eval to arg[{1}]
-    jsr  eval       ; evaluate right-side in arg[{1}]
-    sta  dolr       ; save last char
-    sty  dolr+1     ; save last index
-    bra  prnum0
-prnumx2:
-    lda  (at),y     ; fetch 1 byte next to '$'
-    cmp  #'$'       ; is '$' ?
-    beq  prnumx3    ;   yes: print double hex
-    iny             ;   no:  skip '='
-    ldx  #arg+2     ; point eval to arg[{1}]
-    jsr  eval       ; evaluate right-side in arg[{1}]
-    sta  dolr       ; save last char
-    sty  dolr+1     ; save last index
-    lda  arg+2      ;
-    jsr  prhex
-    bra  execend
-prnumx3:
-    iny             ; skip '$'
-    iny             ; skip '='
-    ldx  #arg+2     ; point eval to arg[{1}]
-    jsr  eval       ; evaluate right-side in arg[{1}]
-    sta  dolr       ; save last char
-    sty  dolr+1     ; save last index
-    lda  arg+3      ;
-    jsr  prhex
-    lda  arg+2      ;
-    jsr  prhex
-    jmp  execend
 ;-----------------------------------------------------;
 ; Print a as hexadecimal number (00 .. FF)
 prhex:

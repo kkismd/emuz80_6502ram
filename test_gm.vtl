@@ -72,10 +72,13 @@
 810 ?=" " ?=12
 820 ?=" "; ?=13
 830 ?=1 ?=2  ?=3   ?=4    ?=5     ?=6  
+840 ?="" A=10
+850 ;=A>11 ?="A="; ?=A ?=", A is greater than or equals to 11"
+860 A=A+1
+870 ;=A>11 ?="A="; ?=A ?=", A is greater than or equals to 11"
+880 A=A+1
+890 ;=A>11 ?="A="; ?=A ?=", A is greater than or equals to 11"
 
 9000 ) total report
-9010 #=E>1[9030
-9020 #=E>1]9050
-9030 ?="total number of errors is ";
-9040 ?=E
-9050 ?=""
+9010 ;=E>1 ?="total number of errors is "; ?=E
+9020 ?=""
