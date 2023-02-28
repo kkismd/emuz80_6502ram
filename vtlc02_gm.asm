@@ -123,28 +123,6 @@
 ;   Example:  <=P) Point to the I/O port at P
 ;             @=@&254^128) Clear bit 0 & flip bit 7
 ;
-; * Starting with VTL02B, the space character is no
-;     longer a valid user variable nor a "valid" binary
-;     operator.  It's now only significant as a numeric
-;     constant terminator and as a place-holder in
-;     strings and program listings, where it may be
-;     used to improve human readability (at a slight
-;     cost in execution speed and memory consumption).
-;   Example:
-;   *              (VTL-2)
-;       1000 A=1)         Init loop index
-;       1010 ?=A)           Print index
-;       1020 ?="")          Newline
-;       1030 A=A+1)         Update index
-;       1040 #=A<10*1010) Loop until done
-;
-;   *              (VTL02B and later)
-;       1000 A = 1             ) Init loop index
-;       1010     ? = A         )   Print index
-;       1020     ? = ""        )   Newline
-;       1030     A = A + 1     )   Update index
-;       1040 # = A < 10 * 1010 ) Loop until done
-;
 ; 2015: Revision C includes further enhancements
 ;   (suggested by Klaus2m5):
 ;
@@ -196,7 +174,7 @@ arg      = $e0      ; {0 1 2 3 4 5 6 7 8 9 :}*
 ; Rarely used variables and argument stack overflow
 semi     = $f6      ; {;}  if statement
 lthan    = $f8      ; {<}* byte pointer for peek/poke
-;        = $fa      ; {=}* valid user variable
+equal    = $fa      ; {=}* pointer to start of program
 gthan    = $fc      ; {>}* temp / call ML subroutine
 ques     = $fe      ; {?}* temp / terminal I/O
 ;
@@ -207,6 +185,7 @@ ESC      = 27       ; "Cancel current input line" key
 CR       = 13       ; newline for output
 LF       = 10       ; line feed char
 BS       = 8        ; "Delete last keypress" key
+EOF      = $ff      ; end of file mark
 OP_OR    = '|'      ; Bit-wise OR operator
 linbuf   = $0200    ; input line buffer
 prgm     = $0400    ; VTLC02 program grows from here
@@ -230,9 +209,13 @@ CONOUT   = $FD39
 ; Initialize program area pointers and start VTLC02
 ; 17 bytes
     lda  #<prgm     ;
+    sta  equal      ; {=} -> empty program
     sta  ampr       ; {&} -> empty program
     lda  #>prgm     ;
+    sta  equal+1    ;
     sta  ampr+1     ;
+    lda  #EOF       ; EOF mark
+    sta  (ampr)     ;
     lda  #<himem    ;
     sta  star       ; {*} -> top of user RAM
     lda  #>himem    ;
@@ -370,7 +353,7 @@ cntln:
     pha             ;   the system stack
     bne  cntln      ;
     cpy  #4         ; if empty line then skip the
-    bcc  jstart     ;   insertion process
+    bcc  markeof    ;   insertion process
     tya             ;
     tax             ; save new line length in x
     clc             ;
@@ -383,7 +366,7 @@ cntln:
     cmp  star       ; if {>} >= {*} then the program
     lda  gthan+1    ;   won't fit in available RAM,
     sbc  star+1     ;   so drop the stack and abort
-    bcs  jstart     ;   to the "OK" prompt
+    bcs  markeof    ;   to the "OK" prompt
 slide:
     lda  ampr       ;
     bne  slide2     ;
@@ -410,6 +393,9 @@ move2:
     sta  ampr       ; {&} = {>}
     lda  gthan+1    ;
     sta  ampr+1     ;
+markeof:
+    lda  #EOF       ; EOF mark
+    sta  (ampr)
 jstart:
     jmp  start      ; drop stack, restart cmd prompt
 ;-----------------------------------------------------;
@@ -506,6 +492,10 @@ exec:
     beq  usr        ;   user-defined ml routine
     cpx  #semi      ; if {;=...} statement then
     beq  ifstmt     ;   exec if-then statement
+    cpx  #ampr      ; if {&=...} 
+    beq  prgman0    ;   exec new statement
+    cpx  #equal     ; if {==...} 
+    beq  prgman0    ;   exec search-end statement
 exec3:
     sta  (arg)      ;
     adc  tick+1     ; store arg[{1}] in the left-side
@@ -519,8 +509,8 @@ exec3:
     sta  tick+1     ;
     stx  tick       ;
 execend:
-    ldy  dolr+1     ; save last index
-    lda  dolr       ; save last char
+    ldy  dolr+1     ; restore last index
+    lda  dolr       ; restore last char
     cmp  #' '       ; statement seperator?
     bne  execrts    ;   no: exec end
 execend2:
@@ -542,9 +532,11 @@ poke:
     sta  (lthan)    ;
     bra  execend
 ifstmt:
-    ora  arg+3
-    beq  execrts ; arg is 0?  yes: end exec
-    bne  execend ;   no: go next statement
+    ora  arg+3      ; arg is 0?
+    beq  execrts    ;   yes: end exec
+    bne  execend    ;   no: go next statement
+prgman0:
+    jmp  progman    ; program management commands
 ;-----------------------------------------------------;
 ; {?=...} handler with variouse format; called by exec:
 prnumx:
@@ -586,9 +578,9 @@ prnumx3:
 ; {?=...} handler; called by exec:
 ; 2 bytes
 prnum0:
-    ldx  #arg+2     ; x -> arg[{1}], fall through
+    ldx  #arg+2     ; x -> arg[{1}]
     jsr  prnum
-    bra  execend
+    jmp  execend
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
 ; Print var[x] as unsigned decimal number (0..65535)  ;
 ; Clever V-flag trick comes courtesy of John Brooks.  ;
@@ -643,6 +635,55 @@ prhex2:
 prhex3:
     jsr  outch
     rts
+;-----------------------------------------------------;
+; Program management commands "new" and "search-end"
+progman:
+    lda  pound      ;
+    ora  pound+1    ; direct mode?
+    bne  progman3   ;   no: normal assignment
+    lda  arg+2      ;
+    ora  arg+3      ; arg is 0 ?
+    bne  progman3   ;   no: normal assignment
+    cpx  #ampr      ; new statement ?
+    bne  progman2   ;   no: go next one
+    lda  equal      ;   yes: process new command
+    sta  ampr       ;
+    lda  equal+1    ; {=} -> {&}
+    sta  ampr+1     ;
+    lda  #EOF       ; EOF mark
+    sta  (ampr)     ;
+    jmp  execend
+progman2:
+    cpx  #equal     ; search-end statement ?
+    bne  progman3   ;   no: go next one
+    lda  equal      ;
+    sta  gthan      ; set search pointer
+    lda  equal+1    ; {>} = {=}
+    sta  gthan+1    ;
+srchend:
+    lda  (gthan)
+    cmp  #EOF
+    beq  srchend2
+    ldy  #2
+    lda  (gthan),y  ; line length -> a
+    clc             ; move pointer to next line
+    adc  gthan      ;
+    sta  gthan      ;
+    lda  #0         ;
+    adc  gthan+1    ;
+    sta  gthan+1    ;
+    bra  srchend    ; go next loop
+srchend2:
+    lda  gthan      ; {&} = {>}
+    sta  ampr       ;
+    lda  gthan+1    ;
+    sta  ampr+1     ;
+    lda  #EOF       ;
+    sta  (ampr)     ;
+    jmp  execend    ;
+progman3:
+    lda  arg+2      ;
+    jmp  exec3      ;
 ;-----------------------------------------------------;
 ; Evaluate a (hopefully) valid VTLC02 expression at
 ;   @[y] and place its calculated value in arg[x]
@@ -1071,14 +1112,14 @@ getbyte:
 ;          (cs): start search at next line
 ;                ({@} -> beginning of current line)
 ; used by: edit:, findln:
-; uses:    prgm, {@ # & (}
+; uses:    {= @ # & (}
 ; exit:    (cs): {@} = {&}, x:a and {(} invalid, y = 2
 ;          (cc): {@} -> beginning of found line, y = 2,
 ;                x:a = {(} = actual found line number
 ; 52 bytes
 find:
-    lda  #<prgm     ;
-    ldx  #>prgm     ;
+    lda  equal      ;
+    ldx  equal+1    ;
     ldy  #2         ;
     bcc  find1st    ; (cc): search begins at first line
     ldx  at+1       ;
@@ -1130,9 +1171,6 @@ findln:
     rts             ;
 istart:
     jmp  start      ; drop stack, restart "OK" prompt
-;-----------------------------------------------------;
-; Kowalski simulator I/O subroutines, with thanks to
-;   the efforts of Klaus2m5
 ;-----------------------------------------------------;
 ; Check for user keypress and return if none has
 ;   arrived.  Otherwise, pause for another keypress
