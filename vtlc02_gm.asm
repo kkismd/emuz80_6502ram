@@ -151,14 +151,8 @@ at       = $80      ; {@}* internal pointer / mem byte
 ; VTLC02 standard user variable space
 ;          $82      ; {A B C .. X Y Z [ \ ] ^ _}
 ; VTLC02 system variable space
-;          $c0      ; { }  starting with VTL02B, the
-;                       space character is no longer a
-;                       valid user variable nor binary
-;                       operator; it's been demoted to
-;                       a numeric constant terminator
-;                       and as a place-holder in
-;                       strings and program listings.
-bang     = $c2      ; {!}  return line number
+space    = $c0      ; { }* gosub & return stack pointer
+bang     = $c2      ; {!}  return line number / gosub
 quote    = $c4      ; {"}  user ml subroutine vector
 pound    = $c6      ; {#}  current line number
 dolr     = $c8      ; {$}  character I/O
@@ -189,8 +183,9 @@ EOF      = $ff      ; end of file mark
 OP_OR    = '|'      ; Bit-wise OR operator
 linbuf   = $0200    ; input line buffer
 prgm     = $0400    ; VTLC02 program grows from here
-himem    = $d000    ;   ... up to the top of user RAM
-vtlc02   = $f100    ; interpreter cold entry point
+himem    = $adff    ;   ... up to the top of user RAM
+vtlstck  = $af00    ; gosub stack space
+vtlc02   = $ea00    ; interpreter cold entry point
 ;                     (warm entry point is startok)
 ; io_area  = $f000      ;configure simulator terminal I/O
 ; acia_tx  = io_area+1  ;acia tx data register
@@ -227,6 +222,8 @@ startok:
 ; Start/restart VTLC02 command line with program intact
 ; 27 bytes
 start:
+    lda  #0         ;
+    sta  space      ; clear vtl stack pointer
     cld             ; a sensible precaution
     ldx  #<nulstk   ;
     txs             ; drop whatever is on the stack
@@ -467,6 +464,8 @@ exec:
     iny             ;
     cmp  #')'       ; same for a full-line comment
     beq  execrts    ;
+    cmp  #']'       ; 
+    beq  retstmt0    ;
     ldx  #arg       ; initialize argument stack
     jsr  convp      ; arg[{0}] -> left-side variable
     jsr  getbyte    ; skip over assignment operator
@@ -496,6 +495,8 @@ exec:
     beq  prgman0    ;   exec new statement
     cpx  #equal     ; if {==...} 
     beq  prgman0    ;   exec search-end statement
+    cpx  #bang      ; if {!=...}
+    beq  gosub0     ;   exec gosub statement
 exec3:
     sta  (arg)      ;
     adc  tick+1     ; store arg[{1}] in the left-side
@@ -517,10 +518,12 @@ execend2:
     lda  (at),y     ; check next char
     cmp  #' '       ;   is space ?
     bne  exec       ;   no: go next statement
-    iny             ;   yes: advance index
-    bra  execend2   ;        check again
+    iny             ;   yes: skip all spaces
+    bra  execend2   ;
 execrts:
     rts             ;
+retstmt0:
+    jmp  retstmt
 usr:
     tax             ; jump to user ml routine with
     lda  arg+3      ;   arg[{1}] in a:x (MSB:LSB)
@@ -537,6 +540,8 @@ ifstmt:
     bne  execend    ;   no: go next statement
 prgman0:
     jmp  progman    ; program management commands
+gosub0:
+    jmp  gosub
 ;-----------------------------------------------------;
 ; {?=...} handler with variouse format; called by exec:
 prnumx:
@@ -684,6 +689,59 @@ srchend2:
 progman3:
     lda  arg+2      ;
     jmp  exec3      ;
+;-----------------------------------------------------;
+; gosub statement
+gosub:
+    lda  pound      ;
+    ora  pound+1    ; direct mode?
+    beq  gosub2     ;   yes: return to command line
+    phy             ;   no: push line # and offset
+    ldy  space      ;     to vtl stack space
+    lda  at         ;
+    sta  vtlstck,y  ; line address high
+    iny             ;
+    lda  at+1       ;
+    sta  vtlstck,y  ; line address low
+    iny             ;
+    pla             ; restore saved index to a
+    sta  vtlstck,y  ; inline index
+    iny             ;
+    sty  space      ; update stack pointer
+    lda  arg+2      ; new line no high
+    sta  pound      ;
+    lda  arg+3      ; new line no low
+    sta  pound+1    ;
+    rts             ; goto next line
+gosub2:
+    jmp  start      ;
+;-----------------------------------------------------;
+; return from subroutine
+retstmt:
+    ldy  space      ; check stack is empty ?
+    beq  retstop    ;   yes: stop program
+    dey             ;
+    lda  vtlstck,y  ; load line index
+    pha             ; save index
+    dey             ;
+    lda  vtlstck,y  ; load line addr low
+    sta  at+1       ;
+    dey             ;
+    sty  space      ; update stack pointer
+    lda  vtlstck,y  ; load line addr high
+    sta  at         ;
+    lda  (at)       ; load line no high
+    sta  pound      ; set current line no high
+    sta  lparen     ; set original line no high
+    ldy  #1         ;
+    lda  (at),y     ; load line no low
+    sta  pound+1    ;
+    sta  lparen+1   ;
+    pla             ; restore index
+    tay             ;   to y
+    jmp  exec       ; continue exec
+retstop:
+    sec
+    jmp  start      ; return to OK prompt.
 ;-----------------------------------------------------;
 ; Evaluate a (hopefully) valid VTLC02 expression at
 ;   @[y] and place its calculated value in arg[x]
