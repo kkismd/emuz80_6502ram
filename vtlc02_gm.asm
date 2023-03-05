@@ -75,9 +75,9 @@
 ;     Parentheses nested deeper than nine levels may
 ;     result in unintended side-effects.
 ; * Users wishing to call a machine language subroutine
-;     via the system variable {>} must first set the
-;     system variable {"} to the proper address vector
-;     (for example, "=768).
+;     via the system variable {>} must pass 2 params
+;     address and value seperated by comma {,}. 
+;     (for example, >=768,123). <GM modification>
 ; * The x register is used to point to a simple VTLC02
 ;     variable (it can't point explicitly to an array
 ;     element like the 680b version because it's only
@@ -153,7 +153,7 @@ at       = $80      ; {@}* internal pointer / mem byte
 ; VTLC02 system variable space
 space    = $c0      ; { }* gosub & return stack pointer
 bang     = $c2      ; {!}  return line number / gosub
-quote    = $c4      ; {"}  user ml subroutine vector
+quote    = $c4      ; {"}  user variable ?
 pound    = $c6      ; {#}  current line number
 dolr     = $c8      ; {$}  character I/O
 remn     = $ca      ; {%}  remainder of last division
@@ -464,8 +464,8 @@ exec:
     iny             ;
     cmp  #')'       ; same for a full-line comment
     beq  execrts    ;
-    cmp  #']'       ; 
-    beq  retstmt0    ;
+    cmp  #']'       ;
+    beq  retstmt0   ;
     ldx  #arg       ; initialize argument stack
     jsr  convp      ; arg[{0}] -> left-side variable
     jsr  getbyte    ; skip over assignment operator
@@ -474,7 +474,7 @@ exec:
     beq  prstr0     ;     trailing ';' check & return
     ldx  arg        ; check left-side var name
     cpx  #ques      ; if {?=...} statement then print
-    beq  prnumx     ;   in variouse format
+    beq  prnumx0    ;   in variouse format
     ldx  #arg+2     ; point eval to arg[{1}]
     jsr  eval       ; evaluate right-side in arg[{1}]
     sta  dolr       ; save last char
@@ -524,24 +524,37 @@ execrts:
     rts             ;
 retstmt0:
     jmp  retstmt
-usr:
-    tax             ; jump to user ml routine with
-    lda  arg+3      ;   arg[{1}] in a:x (MSB:LSB)
-    jsr  usr2
-    bra  execend
-usr2:
-    jmp  (quote)    ; {"} must point to valid 6502 code
-poke:
-    sta  (lthan)    ;
-    bra  execend
-ifstmt:
-    ora  arg+3      ; arg is 0?
-    beq  execrts    ;   yes: end exec
-    bne  execend    ;   no: go next statement
+prnumx0:
+    jmp prnumx
 prgman0:
     jmp  progman    ; program management commands
 gosub0:
     jmp  gosub
+usr:
+    jsr  usr2       ; call user ml and
+    sta  gthan+1    ;  result a:x set to gthan
+    stx  gthan      ;
+    bra  execend    ;
+usr2:
+    lda  arg+2      ; set jump address to {>}
+    sta  gthan      ;
+    lda  arg+3      ;
+    sta  gthan+1    ;
+    lda  arg+5      ; jump to user ml routine with
+    ldx  arg+4      ;   arg[{2}] in a:x (MSB:LSB)
+    jmp  (gthan)    ; {"} must point to valid 6502 code
+poke:
+    lda  arg+2      ; set address to {>}
+    sta  gthan      ;
+    lda  arg+3      ;
+    sta  gthan+1    ;
+    lda  arg+4      ; arg[{2}] low to a
+    sta  (gthan)    ; put to address
+    jmp  execend
+ifstmt:
+    ora  arg+3      ; arg is 0?
+    beq  execrts    ;   yes: end exec
+    bne  execend    ;   no: go next statement
 ;-----------------------------------------------------;
 ; {?=...} handler with variouse format; called by exec:
 prnumx:
@@ -803,13 +816,8 @@ getval:
     rts             ; skip over "?" and return
 getval2:
     cmp  #'$'       ; user char input?
-    bne  getval2a   ;
-    jsr  inch       ;   yes: input one char
-    bra  getval5    ;
-getval2a:
-    cmp  #'@'       ; memory access?
     bne  getval3    ;
-    lda  (lthan)    ; yes: peek memory byte at ({<})
+    jsr  inch       ;   yes: input one char
     bra  getval5    ;
 getval3:
     cmp  #'('       ; sub-expression?
@@ -917,7 +925,7 @@ simple:
     bra  oper8d     ;
 ;-----------------------------------------------------;
 ; Apply the binary operator in a to var[x] and var[x+2]
-; Valid VTLC02 operators are {* + / [ ] - | ^ & < = >}
+; Valid VTLC02 operators are {* + / [ ] - | ^ & < = > ,}
 ; {>} is defined as greater than _or_equal_
 ; An undefined operator will be interpreted as one of
 ;   the three comparison operators
@@ -933,6 +941,10 @@ oper:
     beq  then_      ;
     cmp  #']'       ; "else" operator?
     beq  else_      ;
+    cmp  #','       ; comma operator?
+    beq  comma      ;
+    cmp  #'@'       ; peek oper
+    beq  peek0
     dex             ; (factored from the following ops)
     cmp  #'-'       ; subtraction operator?
     beq  minus      ;
@@ -977,7 +989,7 @@ and_:
 and_2:
     lda  1,x        ;
     and  3,x        ;
-    bra  plus2      ;
+    jmp  plus2      ;
 ;-----------------------------------------------------;
 ; var[x] |= var[x+2]
 ; expects:  pre-decremented x
@@ -988,7 +1000,7 @@ or_:
 or_2:
     lda  1,x        ;
     ora  3,x        ;
-    bra  plus2      ;
+    jmp  plus2      ;
 ;-----------------------------------------------------;
 ; var[x] ^= var[x+2]
 ; expects:  pre-decremented x
@@ -999,7 +1011,7 @@ xor_:
 xor_2:
     lda  1,x        ;
     eor  3,x        ;
-    bra  plus2      ;
+    jmp  plus2      ;
 ;-----------------------------------------------------;
 ; A[B returns 0 if A is 0, otherwise returns B
 ; 14 bytes
@@ -1011,7 +1023,7 @@ then_2:
     lda  2,x        ;
     sta  0,x        ;
     lda  3,x        ;
-    bra  plus2      ;
+    jmp  plus2      ;
 ;-----------------------------------------------------;
 ; A]B returns B if A is 0, otherwise returns 0
 ; 10 bytes
@@ -1021,6 +1033,11 @@ else_:
     beq  then_2     ;
     stz  0,x        ;
     bra  oper8e     ;
+;-----------------------------------------------------;
+comma:
+    rts             ; leave it in at[x+2]
+peek0:
+    jmp peek
 ;-----------------------------------------------------;
 ; var[x] = var[x]/var[x+2] (unsigned), {%} = remainder
 ;   var[x] /= 0 produces {%} = var[x], var[x] = 65535
@@ -1044,7 +1061,7 @@ div2:
     pla             ;   yes: update the partial
     sbc  2,x        ;     remainder and set the low
     inc  0,x        ;     bit of partial quotient
-    !byte  $c9        ;     "cmp #" naked op-code
+    !byte  $c9      ;     "cmp #" naked op-code
 div3:
     pla             ;
     dey             ;
@@ -1052,6 +1069,18 @@ div3:
     sta  remn       ;
     ply             ;
     rts             ;
+peek:
+    clc
+    lda  0,x        ; left side val -> pointer
+    adc  2,x        ; right side val -> offset
+    sta  gthan      ;
+    lda  1,x        ;
+    adc  3,x
+    sta  gthan+1    ;
+    lda  (gthan)    ; memory containts of
+    sta  0,x        ;   (address + offset) -> var[x]
+    stz  1,x
+    rts
 ;-----------------------------------------------------;
 ; If text at @[y] is an unsigned decimal constant,
 ;   translate it into var[x] (mod 65536) and update y
@@ -1229,6 +1258,27 @@ findln:
     rts             ;
 istart:
     jmp  start      ; drop stack, restart "OK" prompt
+;-----------------------------------------------------;
+peekx:
+    lda  #'('
+    jsr  outch
+    lda  0,x
+    jsr  prhex
+    lda  #'-'
+    jsr  outch
+    lda  1,x
+    jsr  prhex
+    lda  #'-'
+    jsr  outch
+    lda  2,x
+    jsr  prhex
+    lda  #'-'
+    jsr  outch
+    lda  3,x
+    jsr  prhex
+    lda  #')'
+    jsr  outch
+    rts
 ;-----------------------------------------------------;
 ; Check for user keypress and return if none has
 ;   arrived.  Otherwise, pause for another keypress
