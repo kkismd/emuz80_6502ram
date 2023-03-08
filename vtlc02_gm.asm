@@ -153,7 +153,7 @@ at       = $80      ; {@}* internal pointer / mem byte
 ; VTLC02 system variable space
 space    = $c0      ; { }* gosub & return stack pointer
 bang     = $c2      ; {!}  return line number / gosub
-quote    = $c4      ; {"}  user variable ?
+quote    = $c4      ; {"}  current statement command
 pound    = $c6      ; {#}  current line number
 dolr     = $c8      ; {$}  character I/O
 remn     = $ca      ; {%}  remainder of last division
@@ -466,6 +466,9 @@ exec:
     beq  execrts    ;
     cmp  #']'       ;
     beq  retstmt0   ;
+    cmp  #'{'       ;
+    beq  dostmt0    ;
+    sta  quote      ; save statement command
     ldx  #arg       ; initialize argument stack
     jsr  convp      ; arg[{0}] -> left-side variable
     jsr  getbyte    ; skip over assignment operator
@@ -524,6 +527,8 @@ execrts:
     rts             ;
 retstmt0:
     jmp  retstmt
+dostmt0:
+    jmp  dostmt
 prnumx0:
     jmp prnumx
 prgman0:
@@ -536,20 +541,12 @@ usr:
     stx  gthan      ;
     bra  execend    ;
 usr2:
-    lda  arg+2      ; set jump address to {>}
-    sta  gthan      ;
-    lda  arg+3      ;
-    sta  gthan+1    ;
     lda  arg+5      ; jump to user ml routine with
     ldx  arg+4      ;   arg[{2}] in a:x (MSB:LSB)
-    jmp  (gthan)    ; {"} must point to valid 6502 code
+    jmp  (arg+2)    ; {"} must point to valid 6502 code
 poke:
-    lda  arg+2      ; set address to {>}
-    sta  gthan      ;
-    lda  arg+3      ;
-    sta  gthan+1    ;
     lda  arg+4      ; arg[{2}] low to a
-    sta  (gthan)    ; put to address
+    sta  (arg+2)    ; use arg[{1}] as pointer
     jmp  execend
 ifstmt:
     ora  arg+3      ; arg is 0?
@@ -656,6 +653,9 @@ prhex3:
 ;-----------------------------------------------------;
 ; Program management commands "new" and "search-end"
 progman:
+    lda  quote      ; read original command char
+    cmp  #'}'       ; until ?
+    beq  untlstmt   ;   yes: go to routine
     lda  pound      ;
     ora  pound+1    ; direct mode?
     bne  progman3   ;   no: normal assignment
@@ -674,8 +674,8 @@ progman:
 progman2:
     cpx  #equal     ; search-end statement ?
     bne  progman3   ;   no: go next one
-    lda  equal      ;
-    sta  gthan      ; set search pointer
+    lda  equal      ; set program top address
+    sta  gthan      ;   to search pointer
     lda  equal+1    ; {>} = {=}
     sta  gthan+1    ;
 srchend:
@@ -703,23 +703,30 @@ progman3:
     lda  arg+2      ;
     jmp  exec3      ;
 ;-----------------------------------------------------;
+; until statement
+untlstmt:
+    lda  arg+2      ; arg is 0?
+    ora  arg+3      ;
+    beq  retstmt    ;   yes: loop again
+    phy             ;   no: drop stack and
+    ldy  space      ;     goto next statement
+    dey             ;
+    dey             ;
+    dey             ;
+    bpl  untlend    ;
+    ldy  #0         ; reset stack for fail safe
+untlend:
+    sty  space      ; udpate stack poiner
+    ply             ; restore current index
+    lda  arg+2      ; go next statement
+    jmp  exec3      ;
+;-----------------------------------------------------;
 ; gosub statement
 gosub:
     lda  pound      ;
     ora  pound+1    ; direct mode?
     beq  gosub2     ;   yes: return to command line
-    phy             ;   no: push line # and offset
-    ldy  space      ;     to vtl stack space
-    lda  at         ;
-    sta  vtlstck,y  ; line address high
-    iny             ;
-    lda  at+1       ;
-    sta  vtlstck,y  ; line address low
-    iny             ;
-    pla             ; restore saved index to a
-    sta  vtlstck,y  ; inline index
-    iny             ;
-    sty  space      ; update stack pointer
+    jsr  pshstk     ;    no: push line # and offset
     lda  arg+2      ; new line no high
     sta  pound      ;
     lda  arg+3      ; new line no low
@@ -727,6 +734,20 @@ gosub:
     rts             ; goto next line
 gosub2:
     jmp  start      ;
+pshstk:
+    phy             ; save line index
+    ldy  space      ; stack pointer to y
+    lda  at         ;
+    sta  vtlstck,y  ; line address high
+    iny             ;
+    lda  at+1       ;
+    sta  vtlstck,y  ; line address low
+    iny             ;
+    pla             ; restore index to a
+    sta  vtlstck,y  ; inline index
+    iny             ;
+    sty  space      ; update stack pointer
+    rts
 ;-----------------------------------------------------;
 ; return from subroutine
 retstmt:
@@ -756,6 +777,15 @@ retstop:
     sec
     jmp  start      ; return to OK prompt.
 ;-----------------------------------------------------;
+; do-while loop statement
+dostmt:
+    dey
+    jsr  pshstk     ; save current point to stack
+    tay             ; now point to '{'
+    iny
+    iny
+    jmp  exec
+;-----------------------------------------------------;
 ; Evaluate a (hopefully) valid VTLC02 expression at
 ;   @[y] and place its calculated value in arg[x]
 ; A VTLC02 expression is defined as a string of one or
@@ -774,12 +804,12 @@ retstop:
 eval:
     jsr  getval     ; get first term into arg[x]
 eval2:
-    jsr  getbyte    ; end of expression '\0' or ')'?
+    jsr  getbyte    ; end of expression '\0', ')' or ' '?
     beq  getrts     ;   yes: done
     iny             ;
     cmp  #')'       ;
     beq  getrts     ;
-    cmp  #' '       ; or space ' '?
+    cmp  #' '       ;
     beq  getrts     ;
     pha             ;   no: stack alleged operator
     inx             ; advance the argument stack
@@ -820,6 +850,13 @@ getval2:
     jsr  inch       ;   yes: input one char
     bra  getval5    ;
 getval3:
+    cmp  #'"'       ; char constant?
+    bne  getval3a   ;
+    jsr  getbyte    ;   yes: get next char
+    iny             ;
+    iny             ; skip enclosing quote
+    bra  getval5    ;
+getval3a:
     cmp  #'('       ; sub-expression?
     beq  eval       ;   yes: evaluate it recursively
     jsr  convp      ;   no: first set var[x] to the
@@ -1070,19 +1107,13 @@ div3:
     ply             ;
     rts             ;
 peek:
-    clc
-    lda  0,x        ; left side val -> pointer
-    adc  2,x        ; right side val -> offset
-    sta  gthan      ;
-    lda  1,x        ;
-    adc  3,x
-    sta  gthan+1    ;
-    lda  (gthan)    ; memory containts of
-    sta  0,x        ;   (address + offset) -> var[x]
-    stz  1,x
-    rts
+    jsr  plus       ; var[x] = var[x] + var[x+2]
+    lda  (0,x)      ; use var[x] as pointer
+    sta  0,x        ; store it
+    stz  1,x        ;
+    rts             ;
 ;-----------------------------------------------------;
-; If text at @[y] is an unsigned decimal constant,
+; If text at @[y] is an unsigned decimal or hex constant,
 ;   translate it into var[x] (mod 65536) and update y
 ; entry:   @[y] -> text containing possible constant;
 ;            leading space characters are skipped, but
@@ -1258,27 +1289,6 @@ findln:
     rts             ;
 istart:
     jmp  start      ; drop stack, restart "OK" prompt
-;-----------------------------------------------------;
-peekx:
-    lda  #'('
-    jsr  outch
-    lda  0,x
-    jsr  prhex
-    lda  #'-'
-    jsr  outch
-    lda  1,x
-    jsr  prhex
-    lda  #'-'
-    jsr  outch
-    lda  2,x
-    jsr  prhex
-    lda  #'-'
-    jsr  outch
-    lda  3,x
-    jsr  prhex
-    lda  #')'
-    jsr  outch
-    rts
 ;-----------------------------------------------------;
 ; Check for user keypress and return if none has
 ;   arrived.  Otherwise, pause for another keypress
