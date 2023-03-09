@@ -707,19 +707,16 @@ progman3:
 untlstmt:
     lda  arg+2      ; arg is 0?
     ora  arg+3      ;
-    beq  retstmt    ;   yes: loop again
-    phy             ;   no: drop stack and
-    ldy  space      ;     goto next statement
-    dey             ;
-    dey             ;
+    beq  retstmt    ;   yes: false case -> loop again
+    ldy  space      ;   no: true case -> loop end
+    dey             ; drop stack and
+    dey             ;   goto next statement
     dey             ;
     bpl  untlend    ;
     ldy  #0         ; reset stack for fail safe
 untlend:
     sty  space      ; udpate stack poiner
-    ply             ; restore current index
-    lda  arg+2      ; go next statement
-    jmp  exec3      ;
+    jmp  execend    ; goto next
 ;-----------------------------------------------------;
 ; gosub statement
 gosub:
