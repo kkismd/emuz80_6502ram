@@ -4,11 +4,14 @@
 
 ## Unimon + VTLC02 イメージ
 
-ファイル名: [EMUZ80-6502RAM_unimon_vtlc02_Q43.hex](./EMUZ80-6502RAM_unimon_vtlc02_Q43.hex)
+* ファイル名: [EMUZ80-6502RAM_unimon_vtlc02_Q43.hex](./EMUZ80-6502RAM_unimon_vtlc02_Q43.hex)
+* ファイル名: [EMUZ80-6502RAM_unimon_vtlc02gm_Q43.hex](./EMUZ80-6502RAM_unimon_vtlc02mg_Q43.hex)
 
 奥江さんがROMイメージ内にひそかに導入されていた[Universal Monitor for 6502](https://electrelic.com/electrelic/node/1317) をACIAポートのアドレスを修正して動作するようにしました。
 
 VTL2の6502版である[VTLC02](https://github.com/barrym95838/6502-Assembly)の入出力ルーチンを改変して動作するようにしました。
+
+下記で説明している機能追加版"VTLC02-GM"についてもROMイメージを公開します。
 
 ### 起動方法
 
@@ -26,6 +29,12 @@ VTL
 CALL $F100
 ```
 
+VTLC02-GMを書き込んだ場合の起動アドレスは`EA00`です。
+
+```basic
+CALL $EA00
+```
+
 ## VTLC02
 
 オリジナルからの改変場所を [vtlc02_emuz6502.diff](./vtlc02_emuz6502.diff) にあげています。
@@ -36,16 +45,14 @@ CALL $F100
 
 コードネーム "GM" として、自分好みに機能追加しています。読み方は「ジム」です。
 
-※上記の「Unimon + VTLC02 イメージ」には含まれておらず、個別のファイルとして公開しています。
-
 - [vtlc02_gm.asm](./vtlc02_gm.asm) ... 機能追加したVTLC02のソースコードです。ACMEでアセンブルできます。
 - [vtlc02_gm.ihex](./vtlc02_gm.ihex) ... 上記をアセンブルしたiHexファイルです。UnimonからLコマンドでロードできます。
 - [test_gm.vtl](./test_gm.vtl) ... GMの機能が正しく動いているか確認するためのテストコードです。内部構造の変更についての確認も含んでいます。
 
 #### 起動方法
 
-プログラムが大きくなりすぎて`$F100`から`$F600`の1280バイトに収まらなくなってしまったので開始位置を`$EA00`に移動しました。
-unimonからLコマンドでihexファイルを読み込んだ後Gコマンドで起動するアドレスが変わりました。
+オリジナルと比べてプログラムが大きくなりすぎて`$F100`から`$F600`の1280バイトに収まらなくなってしまったので開始位置を`$EA00`に移動しました。
+unimonからLコマンドでihexファイルを読み込んだ後、下記のようにGコマンドで起動します。
 
 ```
 G EA00
