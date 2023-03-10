@@ -5,7 +5,7 @@
 ## Unimon + VTLC02 イメージ
 
 * ファイル名: [EMUZ80-6502RAM_unimon_vtlc02_Q43.hex](./EMUZ80-6502RAM_unimon_vtlc02_Q43.hex)
-* ファイル名: [EMUZ80-6502RAM_unimon_vtlc02gm_Q43.hex](./EMUZ80-6502RAM_unimon_vtlc02mg_Q43.hex)
+* ファイル名: [EMUZ80-6502RAM_unimon_vtlc02gm_Q43.hex](./EMUZ80-6502RAM_unimon_vtlc02gm_Q43.hex)
 
 奥江さんがROMイメージ内にひそかに導入されていた[Universal Monitor for 6502](https://electrelic.com/electrelic/node/1317) をACIAポートのアドレスを修正して動作するようにしました。
 
