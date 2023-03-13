@@ -249,7 +249,7 @@ user:
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
 ; List program to terminal and restart "OK" prompt
 ; entry:  Carry must be clear
-; uses:   findln:, outch:, prnum:, prstr:, {@ (}
+; uses:   findln:, outch:, prnum:, prntln:, {@ (}
 ; exit:   to command line via findln:
 ; 21 bytes
 list_:
@@ -259,7 +259,8 @@ list_:
     lda  #' '       ; print a space instead of the
     jsr  outch      ;   line length byte
     ldx  #0         ; zero for delimiter
-    jsr  prstr      ; print the rest of the line
+    iny
+    jsr  prntln     ; print the rest of the line
     sec             ; prepare for next line
     bra  list_      ;
 ;-----------------------------------------------------;
@@ -396,55 +397,57 @@ markeof:
 jstart:
     jmp  start      ; drop stack, restart cmd prompt
 ;-----------------------------------------------------;
-; {?="...} handler; called from exec:
-; 1 byte
-prstr0:
-    tax             ; set delimiter, fall through
-; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
-; Print a string at @[y]
-; x holds the delimiter char, which is skipped over,
-;   not printed ('\0' is always a delimiter)
+; {$=...} statement handler; called from exec:
+joutch:
+    jsr  outch      ;
+    jmp  execend    ;
+;-----------------------------------------------------;
+; General purpose print
 ; If a key was pressed, pause for another keypress
 ;   before returning.  If either of those keys was a
 ;   ctrl-C, drop the stack and restart the "OK" prompt
 ;   with the user program intact
 ; entry:  @[y] -> string, x = delimiter char
-; uses:   pause:, outch:, skpbyte:, execrts:
-; exit:   (normal) @[y] -> '\0' or byte after delimiter
+; exit:   (normal) @[y] -> byte after delimiter
 ;         (ctrl-C) drop the stack & restart "OK" prompt
-; 34 bytes
-prstr:
-    iny             ; next byte
-    txa             ;
-    cmp  (at),y     ; found delimiter
-    beq  prstr2     ;   yes: finish up
-    lda  (at),y     ; found '\0'?
-    beq  outnl      ;   yes: newline and return
+outmsg:
+    stx  ques       ; store delimiter
+outloop:
+    lda  (at),y     ; get char
+    iny             ;
+    cmp  ques       ; found delimiter ?
+    beq  outrts     ;   yes: finish up (y = next char)
     jsr  outch      ;   no: print char to terminal
-    bra  prstr      ;     and loop
-prstr2:
-    tax             ; save closing delimiter
+    bra  outloop    ; loop to next char
+outrts:
     jsr  pause      ; check for pause or abort
-    txa             ; retrieve closing delimiter
-    beq  outnl      ; always '\n' after '\0' delimiter
-    jsr  skpbyte    ; skip over the delimiter
+    rts             ;
+;-----------------------------------------------------;
+; {?="..."} Print string literal
+; entry:  @[y] -> string start quote, a = delimiter /"/
+strng:
+    tax             ; set delimiter
+    iny             ; next to quote     -> /?="X.."/
+    jsr  outmsg     ; print until delimiter
+    lda  (at),y     ; get byte after delimiter
     cmp  #';'       ; if trailing char is ';' ?
-    beq  prstr3     ;  yes: skip newline
-    lda  #CR        ;  no:  print newline
+    beq  strng2     ;   yes: skip newline
+    lda  #CR        ;   no: print newline
     jsr  outch      ;
     dey             ; cancel next increment
-prstr3:
+strng2:
     iny             ; skip ';'
-    lda  (at),y     ; fetch next char
-    iny
+    lda  (at),y     ; fetch next char -> /?="...";X.../
     sty  dolr+1
     sta  dolr
     bra  execend
-outnl:
-    lda  #CR        ; \n to terminal
-joutch:
-    jsr  outch      ;
-    bra  execend
+;-----------------------------------------------------;
+; Print \0 terminated line from @[y] and newline
+prntln:
+    ldx  #0         ; set delimiter
+    jsr  outmsg     ;
+    lda  #CR        ; print newline
+    jmp  outch      ;
 ;-----------------------------------------------------;
 ; Execute a (hopefully) valid VTLC02 statement at @[y]
 ; entry:   @[y] -> left-side of statement
@@ -468,13 +471,13 @@ exec:
     beq  retstmt0   ;
     cmp  #'{'       ;
     beq  dostmt0    ;
-    sta  quote      ; save statement command
+    sta  quote      ; save command char
     ldx  #arg       ; initialize argument stack
     jsr  convp      ; arg[{0}] -> left-side variable
     jsr  getbyte    ; skip over assignment operator
     jsr  skpbyte    ; is right-side a literal string?
     cmp  #'"'       ;   yes: print the string with
-    beq  prstr0     ;     trailing ';' check & return
+    beq  strng      ;     trailing ';' check & return
     ldx  arg        ; check left-side var name
     cpx  #ques      ; if {?=...} statement then print
     beq  prnumx0    ;   in variouse format
