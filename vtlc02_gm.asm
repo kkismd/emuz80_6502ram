@@ -464,6 +464,7 @@ prntln:
 exec:
     jsr  getbyte    ; fetch left-side variable name
     beq  execrts    ; do nothing with a null statement
+    sty  quote      ; save statement start pos
     iny             ;
     cmp  #')'       ; same for a full-line comment
     beq  execrts    ;
@@ -471,7 +472,6 @@ exec:
     beq  retstmt0   ;
     cmp  #'{'       ;
     beq  dostmt0    ;
-    sta  quote      ; save command char
     ldx  #arg       ; initialize argument stack
     jsr  convp      ; arg[{0}] -> left-side variable
     jsr  getbyte    ; skip over assignment operator
@@ -557,23 +557,28 @@ ifstmt:
     bne  execend    ;   no: go next statement
 ;-----------------------------------------------------;
 ; {?=...} handler with variouse format; called by exec:
+; y index pos
+;    print decimal -> {?=X..."}  start quote
+;    print 1 hex   -> {?$X"..."}  equal sign
+;    print 2 hex   -> {??X"..."}  equal sign
 prnumx:
-    dey
-    lda  (at),y     ; fetch 1 byte next to '?'
-    iny
-    cmp  #'$'       ; is '$' ?
-    beq  prnumx2    ;   yes: print hex
+    phy             ; save current pos
+    ldy  quote      ; fetch 1 byte
+    iny             ;   next to '?'
+    lda  (at),y     ;
+    ply             ; restore current pos
+    cmp  #'='       ; is '=' ?
+    bne  prnumx2    ;   no: print hex
     ldx  #arg+2     ; point eval to arg[{1}]
     jsr  eval       ; evaluate right-side in arg[{1}]
     sta  dolr       ; save last char
     sty  dolr+1     ; save last index
     bra  prnum0
 prnumx2:
-    lda  (at),y     ; fetch 1 byte next to '$'
-    cmp  #'$'       ; is '$' ?
-    beq  prnumx3    ;   yes: print double hex
-    iny             ;   no:  skip '='
+    iny
     ldx  #arg+2     ; point eval to arg[{1}]
+    cmp  #'?'       ; command is '??=' ?
+    beq  prnumx3    ;   yes: print double hex
     jsr  eval       ; evaluate right-side in arg[{1}]
     sta  dolr       ; save last char
     sty  dolr+1     ; save last index
@@ -581,9 +586,6 @@ prnumx2:
     jsr  prhex
     bra  execend
 prnumx3:
-    iny             ; skip '$'
-    iny             ; skip '='
-    ldx  #arg+2     ; point eval to arg[{1}]
     jsr  eval       ; evaluate right-side in arg[{1}]
     sta  dolr       ; save last char
     sty  dolr+1     ; save last index
@@ -656,7 +658,10 @@ prhex3:
 ;-----------------------------------------------------;
 ; Program management commands "new" and "search-end"
 progman:
-    lda  quote      ; read original command char
+    phy             ; save index
+    ldy  quote      ; read original
+    lda  (at),y     ;  command char
+    ply             ; restore index
     cmp  #'}'       ; until ?
     beq  untlstmt   ;   yes: go to routine
     lda  pound      ;
