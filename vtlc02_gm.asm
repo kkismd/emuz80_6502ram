@@ -595,12 +595,31 @@ prnumx3:
     jsr  prhex
     jmp  execend
 ;-----------------------------------------------------;
-; {?=...} handler; called by exec:
-; 2 bytes
+; Print signed decimal number
+; 20 bytes
 prnum0:
-    ldx  #arg+2     ; x -> arg[{1}]
+    ldx  #arg+2     ; set pointer x -> arg[{1}]
+    lda  1,x        ; test minus sign bit of msb
+    bpl  prplus     ;
+    jsr  negate     ;
+    lda  #'-'       ; print '-' sign
+    jsr  outch
+prplus:
     jsr  prnum
     jmp  execend
+;-----------------------------------------------------;
+; negate var[x]
+; 14 bytes
+negate:
+    lda  #0
+    sec
+    sbc  0,x
+    sta  0,x
+    lda  #0
+    sbc  1,x
+    sta  1,x
+negrts:
+    rts
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
 ; Print var[x] as unsigned decimal number (0..65535)  ;
 ; Clever V-flag trick comes courtesy of John Brooks.  ;
@@ -835,7 +854,7 @@ getval:
     jsr  getbyte    ;
     iny             ;
     cmp  #'?'       ; user line input?
-    bne  getval2    ;
+    bne  getval1    ;
     phy             ;   yes:
     lda  at         ;     save @[y]
     pha             ;     (current expression ptr)
@@ -849,6 +868,13 @@ getval:
     sta  at         ; restore @[y]
     ply             ;
     rts             ; skip over "?" and return
+getval1:
+    cmp  #'-'       ; minus sign ?
+    bne  getval2    ;
+    stz  0,x        ;   yes: insert 0 before minus sign
+    stz  1,x        ;     for emulate unary operator
+    dey             ;
+    bra  getrts     ;
 getval2:
     cmp  #'$'       ; user char input?
     bne  getval3    ;
@@ -978,15 +1004,15 @@ oper:
     cmp  #'*'       ; multiplication operator?
     beq  mul        ;
     cmp  #'/'       ; division operator?
-    beq  div        ;
+    beq  divsig0    ;
     cmp  #'['       ; "then" operator?
     beq  then_      ;
     cmp  #']'       ; "else" operator?
     beq  else_      ;
     cmp  #','       ; comma operator?
-    beq  comma      ;
+    beq  and_rt     ;
     cmp  #'@'       ; peek oper
-    beq  peek0
+    beq  peek0      ;
     dex             ; (factored from the following ops)
     cmp  #'-'       ; subtraction operator?
     beq  minus      ;
@@ -996,6 +1022,8 @@ oper:
     beq  xor_       ;
     cmp  #'&'       ; bit-wise and operator?
     beq  and_       ;
+    cmp  #'#'       ; not equal operator
+    beq  noteq      ;
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
 ; Apply comparison operator in a to var[x] and var[x+2]
 ;   and place result in var[x] (1: true, 0: false)
@@ -1004,15 +1032,37 @@ oper:
     eor  #'<'       ; 0: '<'  1: '='  2: '>'
     sta  gthan      ; other values in a are undefined,
     jsr  minus      ;   but _will_ produce some result
-    dec  gthan      ; var[x] -= var[x+2]
-    bne  oper8b     ; equality test?
-    ora  0,x        ;   yes: 'or' high and low bytes
-    beq  oper8c     ;     (cs) from minus if 0
-    clc             ;     (cc) if not 0
-oper8b:
-    lda  gthan      ;
-    rol             ;
-oper8c:
+    ; test sign bit of msb
+    lda  1,x
+    bpl  opgte
+    ; if minus ? ... a < b
+    ;   if gthan is 0 -> true else false
+    lda  gthan
+    bne  opfalse
+    beq  optrue
+opgte:
+    ; 0: '<'  1: '='  2: '>'
+    ; if plus or zero ... a >= b
+    ;  if gthan is 1 -> true else false
+    ora  0,x
+    beq  opeql 
+    ; a > b
+    ;   if gthan is 0 -> false, 1 -> false, 2 -> true
+    lda  gthan
+    cmp  #2
+    bra  opend
+opeql:
+    ; a = b
+    ;   if gthan is 0 -> false, 1 -> true, 2 -> true
+    lda  gthan
+    beq  opfalse
+optrue:
+    sec
+    bra  opend
+opfalse:
+    clc
+opend:
+    lda  #0
     adc  #0         ;
     and  #1         ; var[x] = 1 (true), 0 (false)
 oper8d:
@@ -1021,6 +1071,9 @@ oper8e:
     stz  1,x        ;
 oper8f:
     rts             ;
+;-----------------------------------------------------;
+divsig0:
+    bra divsig
 ;-----------------------------------------------------;
 ; var[x] &= var[x+2]
 ; expects:  pre-decremented x
@@ -1031,7 +1084,8 @@ and_:
 and_2:
     lda  1,x        ;
     and  3,x        ;
-    jmp  plus2      ;
+and_rt:
+    rts             ;
 ;-----------------------------------------------------;
 ; var[x] |= var[x+2]
 ; expects:  pre-decremented x
@@ -1042,7 +1096,7 @@ or_:
 or_2:
     lda  1,x        ;
     ora  3,x        ;
-    jmp  plus2      ;
+    bra  and_rt     ;
 ;-----------------------------------------------------;
 ; var[x] ^= var[x+2]
 ; expects:  pre-decremented x
@@ -1053,7 +1107,7 @@ xor_:
 xor_2:
     lda  1,x        ;
     eor  3,x        ;
-    jmp  plus2      ;
+    bra  and_rt     ;
 ;-----------------------------------------------------;
 ; A[B returns 0 if A is 0, otherwise returns B
 ; 14 bytes
@@ -1065,7 +1119,7 @@ then_2:
     lda  2,x        ;
     sta  0,x        ;
     lda  3,x        ;
-    jmp  plus2      ;
+    bra  and_rt     ;
 ;-----------------------------------------------------;
 ; A]B returns B if A is 0, otherwise returns 0
 ; 10 bytes
@@ -1076,10 +1130,55 @@ else_:
     stz  0,x        ;
     bra  oper8e     ;
 ;-----------------------------------------------------;
-comma:
-    rts             ; leave it in at[x+2]
 peek0:
     jmp peek
+;-----------------------------------------------------;
+noteq
+    jsr  minus      ; var[x] = var[x] - var[x+2]
+    lda  1,x        ; test var[x]
+    ora  0,x        ;
+    bne  noteq1     ;
+    stz  0,x        ; var[x] == 0 -> false (0)
+    bra  noteq2
+noteq1:
+    lda  #1         ; var[x] <> 0 -> true (1)
+    sta  0,x
+noteq2:
+    stz  1,x
+    rts
+;-----------------------------------------------------;
+; division for signed number
+divsig:
+    stz  ques       ; init sign strage
+    stz  ques+1     ;
+    ; test msb of var[x] sign bit
+    lda  1,x        ; msb of var[x]
+    bpl  divpls
+    inc  ques       ; if minus case
+    jsr  negate
+divpls:
+    ; test msb of var[x+2] sign bit
+    lda  3,x        ; msb of var[x+2]
+    bpl  divpls2
+    inc  ques+1     ; if minus
+    inx
+    inx
+    jsr  negate
+    dex
+    dex
+divpls2:
+    ; do unsigned div and restore sign
+    jsr  div
+    lda  ques
+    eor  ques+1
+    beq  dvskp
+    jsr  negate
+    phx
+    ldx  #remn
+    jsr  negate
+    plx
+dvskp:    
+    rts
 ;-----------------------------------------------------;
 ; var[x] = var[x]/var[x+2] (unsigned), {%} = remainder
 ;   var[x] /= 0 produces {%} = var[x], var[x] = 65535
