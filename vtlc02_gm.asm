@@ -490,9 +490,11 @@ exec:
     bne  exec3      ;   yes: skip to default actions
     ldx  arg        ;
     cpx  #at        ; if {@=...} statement then poke
-    beq  poke       ;   low half of arg[{1}] to ({<})
+    beq  poke       ;   low half of arg[{2}] to arg[{1}]
     cpx  #dolr      ; if {$=...} statement then print
     beq  joutch     ;   arg[{1}] as ASCII character
+    cpx  #lthan     ; if {<=...} statement then poke
+    beq  poke16     ;   arg[{2}] to arg[{1}]
     cpx  #gthan     ; if {>=...} statement then call
     beq  usr        ;   user-defined ml routine
     cpx  #semi      ; if {;=...} statement then
@@ -550,6 +552,13 @@ usr2:
 poke:
     lda  arg+4      ; arg[{2}] low to a
     sta  (arg+2)    ; use arg[{1}] as pointer
+    jmp  execend
+poke16:
+    lda  arg+4      ; arg[{2}] low to a
+    sta  (arg+2)    ; use arg[{1}] as pointer
+    ldy  #1         ;
+    lda  arg+5      ; arg[{2}] high to a
+    sta  (arg+2),y  ; use arg[{1}] as pointer
     jmp  execend
 ifstmt:
     ora  arg+3      ; arg is 0?
@@ -871,9 +880,8 @@ getval:
 getval1:
     cmp  #'-'       ; minus sign ?
     bne  getval2    ;
-    stz  0,x        ;   yes: insert 0 before minus sign
-    stz  1,x        ;     for emulate unary operator
-    dey             ;
+    jsr  cvbin      ; evaluate next term
+    jsr  negate     ;   and negate
     bra  getrts     ;
 getval2:
     cmp  #'$'       ; user char input?
