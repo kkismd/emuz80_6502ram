@@ -180,7 +180,6 @@ CR       = 13       ; newline for output
 LF       = 10       ; line feed char
 BS       = 8        ; "Delete last keypress" key
 EOF      = $ff      ; end of file mark
-OP_OR    = '|'      ; Bit-wise OR operator
 linbuf   = $0200    ; input line buffer
 prgm     = $0400    ; VTLC02 program grows from here
 himem    = $adff    ;   ... up to the top of user RAM
@@ -603,19 +602,21 @@ prnumx3:
     lda  arg+2      ;
     jsr  prhex
     jmp  execend
-;-----------------------------------------------------;
-; Print signed decimal number
-; 20 bytes
 prnum0:
     ldx  #arg+2     ; set pointer x -> arg[{1}]
+    jsr  prsign
+    jmp  execend
+
+;-----------------------------------------------------;
+; Print signed decimal number of var[x]
+prsign:
     lda  1,x        ; test minus sign bit of msb
     bpl  prplus     ;
     jsr  negate     ;
     lda  #'-'       ; print '-' sign
     jsr  outch
 prplus:
-    jsr  prnum
-    jmp  execend
+    bra  prnum
 ;-----------------------------------------------------;
 ; negate var[x]
 ; 14 bytes
@@ -1013,10 +1014,10 @@ oper:
     beq  mul        ;
     cmp  #'/'       ; division operator?
     beq  divsig0    ;
-    cmp  #'['       ; "then" operator?
-    beq  then_      ;
-    cmp  #']'       ; "else" operator?
-    beq  else_      ;
+    cmp  #'['       ; "shiftL" operator?
+    beq  shiftl     ;
+    cmp  #']'       ; "shiftR" operator?
+    beq  shiftr     ;
     cmp  #','       ; comma operator?
     beq  and_rt     ;
     cmp  #'@'       ; peek oper
@@ -1024,7 +1025,7 @@ oper:
     dex             ; (factored from the following ops)
     cmp  #'-'       ; subtraction operator?
     beq  minus      ;
-    cmp  #OP_OR     ; bit-wise or operator?
+    cmp  #'|'        ; bit-wise or operator?
     beq  or_        ;
     cmp  #'^'       ; bit-wise xor operator?
     beq  xor_       ;
@@ -1035,6 +1036,7 @@ oper:
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
 ; Apply comparison operator in a to var[x] and var[x+2]
 ;   and place result in var[x] (1: true, 0: false)
+; uses:   {>} gthan as temp var
 ; expects:  (cs), pre-decremented x
 ; 28 bytes
     eor  #'<'       ; 0: '<'  1: '='  2: '>'
@@ -1092,6 +1094,8 @@ and_:
 and_2:
     lda  1,x        ;
     and  3,x        ;
+and_3:
+    sta  1,x        ;
 and_rt:
     rts             ;
 ;-----------------------------------------------------;
@@ -1104,7 +1108,7 @@ or_:
 or_2:
     lda  1,x        ;
     ora  3,x        ;
-    bra  and_rt     ;
+    bra  and_3      ;
 ;-----------------------------------------------------;
 ; var[x] ^= var[x+2]
 ; expects:  pre-decremented x
@@ -1115,31 +1119,34 @@ xor_:
 xor_2:
     lda  1,x        ;
     eor  3,x        ;
-    bra  and_rt     ;
-;-----------------------------------------------------;
-; A[B returns 0 if A is 0, otherwise returns B
-; 14 bytes
-then_:
-    lda  0,x        ;
-    ora  1,x        ;
-    beq  oper8f     ;
-then_2:
-    lda  2,x        ;
-    sta  0,x        ;
-    lda  3,x        ;
-    bra  and_rt     ;
-;-----------------------------------------------------;
-; A]B returns B if A is 0, otherwise returns 0
-; 10 bytes
-else_:
-    lda  0,x        ;
-    ora  1,x        ;
-    beq  then_2     ;
-    stz  0,x        ;
-    bra  oper8e     ;
+    bra  and_3      ;
 ;-----------------------------------------------------;
 peek0:
     jmp peek
+;-----------------------------------------------------;
+; A[B shift A left B bit
+shiftl:
+    lda  0,x
+    asl
+    sta  0,x
+    lda  1,x
+    rol
+    sta  1,x
+    dec  2,x
+    bne  shiftl
+    rts
+;-----------------------------------------------------;
+; A]B shift A right B bit
+shiftr:
+    lda  1,x
+    lsr
+    sta  1,x
+    lda  0,x
+    ror
+    sta  0,x
+    dec  2,x
+    bne  shiftr
+    rts
 ;-----------------------------------------------------;
 noteq
     jsr  minus      ; var[x] = var[x] - var[x+2]
@@ -1437,13 +1444,6 @@ inch:
 ; Print ASCII char in a to I/O window
 ; 16 bytes
 outch:
-    ; cmp  #CR        ;
-    ; bne  not_cr     ;
-    ; lda  #LF        ; add LF to CR (Kowalski)
-    ; sta  acia_tx    ; emit LF via transmit register
-    ; lda  #CR        ;
-not_cr:
-    ; sta  acia_tx    ; emit char via transmit register
     jsr  CONOUT
     rts             ;
 ;-----------------------------------------------------;
